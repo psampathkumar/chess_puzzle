@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Chess Path Puzzle</title>
+
+<style>
+body { font-family: Arial; display:flex; gap:20px; }
+#left { display:flex; flex-direction:column; align-items:center; }
+
+#board {
+  display:grid;
+  grid-template-columns: repeat(8, 60px);
+  margin-top:20px;
+  position:relative;
+}
+
+.cell {
+  width:60px; height:60px;
+  display:flex; align-items:center; justify-content:center;
+  border:1px solid #333;
+  font-size:28px;
+  cursor:pointer;
+}
+
+.dark { background:#769656; }
+.light { background:#eeeed2; }
+
+.selected { outline: 3px solid red; }
+
+.blink {
+  animation: blinkRed 0.5s ease-in-out 3;
+}
+
+@keyframes blinkRed {
+  0% { box-shadow:0 0 0px red; }
+  50% { box-shadow:0 0 15px red; }
+  100% { box-shadow:0 0 0px red; }
+}
+
+#status { margin-top:10px; font-weight:bold; }
+
+#history { min-width:200px; }
+
+svg {
+  position:absolute;
+  top:0;
+  left:0;
+  pointer-events:none;
+}
+</style>
+</head>
+
+<body>
+
+<div id="left">
+  <h2>Chess Path Puzzle</h2>
+  <button onclick="game.nextLevel()">Next Level</button>
+  <button onclick="game.redo()">Redo Puzzle</button>
+  <label><input type="checkbox" id="toggleHints"/> Show Solution</label>
+  <div id="status"></div>
+  <div id="board"></div>
+</div>
+
+<div id="history">
+  <h3>History</h3>
+  <ul id="list"></ul>
+</div>
+
+<script src="chess.js"></script>
+
+</body>
+</html>
