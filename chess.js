@@ -93,40 +93,132 @@ function isPathSafe(from,to,attacked){
   return true;
 }
 
-// bounded BFS
-function bfsAll(start,end,board,attacked,pieceType){
-  let q=[[start,[start]]];
-  let res=[], min=1e9;
-  let visited=new Map();
-  visited.set(start,1);
+// Returns the set of squares reachable in one safe move from `sq`
+function safeMoves(sq, board, attacked, pieceType){
+  let moves = [];
+  for(let m of PieceEngine.getMoves(pieceType, sq, board)){
+    if(!attacked.has(m) && isPathSafe(sq, m, attacked)) moves.push(m);
+  }
+  return moves;
+}
 
-  let steps = 0;
-  const LIMIT = 5000;
+// Bidirectional BFS — returns {fwd, bwd, dist} or null if unreachable.
+// fwd[sq] = distance from start, bwd[sq] = distance from end.
+// dist = total shortest path length (in nodes, so moves = dist-1).
+function biDirBFS(start, end, board, attacked, pieceType){
+  if(start === end) return null;
 
-  while(q.length){
-    if(steps++ > LIMIT) return [];
+  // Each frontier is a Map: square -> distance
+  let fwd = new Map([[start, 0]]);
+  let bwd = new Map([[end,   0]]);
 
-    let [pos,path]=q.shift();
+  let fQueue = [start];
+  let bQueue = [end];
 
-    if(path.length>min) continue;
+  let best = Infinity;
 
-    if(pos===end){
-      min=path.length;
-      res.push(path);
+  // Expand one level of a frontier, return true if we found a meeting point
+  function expand(queue, myDist, otherDist){
+    let next = [];
+    let found = false;
+    for(let sq of queue){
+      let d = myDist.get(sq);
+      for(let m of safeMoves(sq, board, attacked, pieceType)){
+        if(myDist.has(m)) continue;          // already seen from this side
+        myDist.set(m, d + 1);
+        next.push(m);
+        if(otherDist.has(m)){
+          let candidate = (d + 1) + otherDist.get(m);
+          if(candidate < best) best = candidate;
+          found = true;
+        }
+      }
+    }
+    return {next, found};
+  }
+
+  // Alternate expanding the smaller frontier
+  while(fQueue.length && bQueue.length){
+    if(fwd.size <= bwd.size){
+      let {next, found} = expand(fQueue, fwd, bwd);
+      fQueue = next;
+      // Once we've found a meeting point, finish expanding this level fully
+      // then stop — any path longer than best can be pruned
+      if(found && fwd.get(fQueue[0] ?? '') > best) break;
+    } else {
+      let {next, found} = expand(bQueue, bwd, fwd);
+      bQueue = next;
+      if(found && bwd.get(bQueue[0] ?? '') > best) break;
+    }
+    if(best < Infinity){
+      // Check if further expansion can possibly improve
+      let fMin = fQueue.length ? fwd.get(fQueue[0]) : Infinity;
+      let bMin = bQueue.length ? bwd.get(bQueue[0]) : Infinity;
+      if(fMin + bMin >= best) break;
+    }
+  }
+
+  if(best === Infinity) return null;
+  return {fwd, bwd, dist: best + 1}; // dist in nodes
+}
+
+// Collect all shortest paths using the distance maps from biDirBFS.
+// Walks a DAG forward from start: only step to squares where fwd[m] = fwd[sq]+1
+// and fwd[m] + bwd[m] = best total dist-1 (i.e. the square is on a shortest path).
+function collectPaths(start, end, board, attacked, pieceType, fwd, bwd, totalDist){
+  const targetMoves = totalDist - 1; // number of edges
+
+  let results = [];
+  const RESULT_CAP = 50;
+  const NODE_CAP   = 8000;
+  let nodes = 0;
+
+  // stack entries: [square, path_so_far]
+  let stack = [[start, [start]]];
+
+  while(stack.length){
+    if(++nodes > NODE_CAP || results.length >= RESULT_CAP) break;
+
+    let [sq, path] = stack.pop();
+    let d = fwd.get(sq);
+
+    if(sq === end){
+      if(path.length === totalDist) results.push(path);
       continue;
     }
 
-    for(let m of PieceEngine.getMoves(pieceType,pos,board)){
-      if(attacked.has(m) || !isPathSafe(pos,m,attacked)) continue;
+    for(let m of safeMoves(sq, board, attacked, pieceType)){
+      let md = fwd.get(m);
+      // m must be exactly one step further forward
+      if(md !== d + 1) continue;
+      // m must sit on a shortest path to end
+      let bd = bwd.get(m);
+      if(bd === undefined) continue;
+      if(md + bd !== targetMoves) continue;
 
-      let len = path.length+1;
-      if(visited.has(m) && visited.get(m) < len) continue;
-
-      visited.set(m,len);
-      q.push([m,[...path,m]]);
+      stack.push([m, [...path, m]]);
     }
   }
-  return res;
+
+  return results;
+}
+
+// Main entry: find all shortest paths from start to end.
+// Returns [] if unreachable or path is too short.
+function bfsAll(start, end, board, attacked, pieceType){
+  let r = biDirBFS(start, end, board, attacked, pieceType);
+  if(!r) return [];
+  if(r.dist < 3) return []; // need at least 2 moves (3 nodes)
+
+  return collectPaths(start, end, board, attacked, pieceType, r.fwd, r.bwd, r.dist);
+}
+
+// Cheap reachability check — just bidir BFS, no path collection.
+// Returns minimum path length in nodes, or 0 if unreachable / too short.
+function cheapReachable(start, end, board, attacked, pieceType){
+  let r = biDirBFS(start, end, board, attacked, pieceType);
+  if(!r || r.dist < 3) return 0;
+  return r.dist;
 }
 
 class Generator {
@@ -136,43 +228,70 @@ class Generator {
   rand(){ return toSquare(Math.floor(Math.random()*8),Math.floor(Math.random()*8)); }
 
   generate(){
-    let startTime = performance.now();
-    const LIMIT = 1500;
+    const startTime = performance.now();
+    const TIME_LIMIT = 1800;
 
-    while(performance.now()-startTime < LIMIT){
+    outer:
+    while(performance.now() - startTime < TIME_LIMIT){
 
-      let board={}, pieces=[];
-      let counts={pawn:0,rook:0,bishop:0,knight:0,queen:0,king:0};
+      // 1. Pick start, end, player piece
+      let s = this.rand(), e = this.rand();
+      if(s === e) continue;
 
-      let s=this.rand(), e=this.rand();
-      if(s===e) continue;
+      let playerPiece = PLAYER_PIECES[Math.floor(Math.random() * PLAYER_PIECES.length)];
 
-      let playerPiece = PLAYER_PIECES[Math.floor(Math.random()*PLAYER_PIECES.length)];
+      // 2. Confirm start→end is reachable on empty board (trivially fast)
+      if(!cheapReachable(s, e, {}, new Set(), playerPiece)) continue;
 
-      for(let i=0;i<this.level-1;i++){
-        let tries=0;
-        while(tries++<20){
-          let type=Object.keys(PIECE_LIMITS)[Math.floor(Math.random()*6)];
-          if(counts[type]>=PIECE_LIMITS[type]) continue;
+      // 3. Incrementally add pieces one at a time.
+      //    After each placement, cheapReachable validates the path still exists.
+      //    If not, roll back that piece and try a different one.
+      //    This means we never call the expensive full bfsAll until everything is settled.
+      let board = {}, pieces = [];
+      let counts = {pawn:0, rook:0, bishop:0, knight:0, queen:0, king:0};
+      const target = this.level - 1;
 
-          let sq=this.rand();
-          if(sq===s||sq===e||board[sq]) continue;
+      for(let i = 0; i < target; i++){
+        let placed = false;
 
-          pieces.push({type,square:sq});
-          board[sq]=type;
+        for(let tries = 0; tries < 40; tries++){
+          if(performance.now() - startTime > TIME_LIMIT) break outer;
+
+          let type = Object.keys(PIECE_LIMITS)[Math.floor(Math.random() * 6)];
+          if(counts[type] >= PIECE_LIMITS[type]) continue;
+
+          let sq = this.rand();
+          if(sq === s || sq === e || board[sq]) continue;
+
+          // Tentatively place
+          pieces.push({type, square: sq});
+          board[sq] = type;
           counts[type]++;
+
+          let atk = PieceEngine.getAttackMap(pieces, board);
+
+          if(atk.has(s) || atk.has(e) || !cheapReachable(s, e, board, atk, playerPiece)){
+            // Doesn't work — roll back
+            pieces.pop();
+            delete board[sq];
+            counts[type]--;
+            continue;
+          }
+
+          placed = true;
           break;
         }
+
+        if(!placed) continue outer; // couldn't fill this slot — restart
       }
 
-      let atk = PieceEngine.getAttackMap(pieces,board);
-      if(atk.has(s)||atk.has(e)) continue;
+      // 4. All pieces placed and path confirmed cheap. Now get full solutions.
+      let atk = PieceEngine.getAttackMap(pieces, board);
+      let sol = bfsAll(s, e, board, atk, playerPiece);
 
-      let sol = bfsAll(s,e,board,atk,playerPiece);
-
-      if(sol.length && sol[0].length>=3 && sol.length<=50){
+      if(sol.length && sol[0].length >= 3){
         return {
-          s,e,pieces,sol,
+          s, e, pieces, sol,
           playerPiece,
           complexity: sol[0].length * pieces.length
         };
