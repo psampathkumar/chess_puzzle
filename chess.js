@@ -516,15 +516,52 @@ class Game {
     });
   }
 
-  blinkAttackers(square) {
-    let {pieces} = this.curr;
+  blinkAttackers(from, to) {
+    // `from` = player's current position, `to` = attempted destination
+    let {pieces, playerPiece} = this.curr;
     let board = {};
     pieces.forEach(p => board[p.square] = p.type);
-    let lines = PieceEngine.getAttackLines(square, pieces, board);
-    lines.forEach(([from]) => {
-      let el = document.querySelector(`[data-sq="${from}"]`);
-      if (el) el.classList.add('blink');
-    });
+
+    // Collect all (attacker, attacked-square) pairs that explain this invalid move.
+    // Two cases:
+    //   1. The destination itself is attacked.
+    //   2. An intermediate square on the player's ray is attacked (sliding pieces).
+    const lines = [];
+    const seen  = new Set(); // avoid duplicate arrows
+
+    // Helper: add all pieces attacking `sq`, drawing arrow from attacker to sq
+    const addAttackersOf = (sq) => {
+      for (const [attSq, target] of PieceEngine.getAttackLines(sq, pieces, board)) {
+        const key = attSq + '>' + target;
+        if (!seen.has(key)) {
+          seen.add(key);
+          lines.push([attSq, target]);
+          const el = document.querySelector(`[data-sq="${attSq}"]`);
+          if (el) el.classList.add('blink');
+        }
+      }
+    };
+
+    // Case 1: destination attacked
+    addAttackersOf(to);
+
+    // Case 2: walk the ray from `from` toward `to`; check each intermediate square.
+    // Knights jump so they have no intermediate squares.
+    const a = toCoord(from), b = toCoord(to);
+    const adx = Math.abs(b.x - a.x), ady = Math.abs(b.y - a.y);
+    const isKnight = (adx === 1 && ady === 2) || (adx === 2 && ady === 1);
+    if (!isKnight) {
+      const dx = Math.sign(b.x - a.x), dy = Math.sign(b.y - a.y);
+      let x = a.x + dx, y = a.y + dy;
+      while (x !== b.x || y !== b.y) {
+        const mid = toSquare(x, y);
+        if (PieceEngine.getAttackMap(pieces, board).has(mid)) {
+          addAttackersOf(mid);
+        }
+        x += dx; y += dy;
+      }
+    }
+
     this.drawAttackLines(lines);
   }
 
@@ -562,7 +599,7 @@ class Game {
     } else {
       this.invalid++;
       this.setStatus('Invalid move');
-      this.blinkAttackers(sq);
+      this.blinkAttackers(this.pos, sq);
     }
   }
 }
