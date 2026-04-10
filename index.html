@@ -29,6 +29,22 @@ body { font-family: Arial; display:flex; gap:20px; }
 
 .selected { outline: 3px solid red; }
 
+/* Player piece: gold tint so it reads as "yours" at a glance */
+.player-piece {
+  color: #f5c518;
+  text-shadow: 0 0 6px rgba(245, 197, 24, 0.7);
+}
+
+/* End square: subtle green pulse to draw the eye */
+.end-square {
+  background: #4a7c59 !important;
+  animation: pulseGreen 1.8s ease-in-out infinite;
+}
+@keyframes pulseGreen {
+  0%, 100% { background: #4a7c59 !important; }
+  50%       { background: #5fa870 !important; }
+}
+
 .blink {
   animation: blinkRed 0.5s ease-in-out 3;
 }

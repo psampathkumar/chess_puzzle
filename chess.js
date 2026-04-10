@@ -89,12 +89,81 @@ class PieceEngine {
   }
 }
 
-// ─── Path safety ─────────────────────────────────────────────────────────────
+// ─── Integer helpers ─────────────────────────────────────────────────────────
+// sq index = x + y*8  (0..63).  All hot BFS code works on ints; strings only
+// appear at the public API boundary.
+
+function sqToInt(s)       { return FILES.indexOf(s[0]) + (+s[1] - 1) * 8; }
+function intToSq(n)       { return FILES[n & 7] + ((n >> 3) + 1); }
+function inBoundsXY(x, y) { return x >= 0 && x < 8 && y >= 0 && y < 8; }
+
+// ─── Move generation (int) ────────────────────────────────────────────────────
+
+const DIRS = {
+  rook:   [[1,0],[-1,0],[0,1],[0,-1]],
+  bishop: [[1,1],[1,-1],[-1,1],[-1,-1]],
+  queen:  [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]],
+  knight: [[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]],
+  king:   [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]],
+  pawn:   [[-1,-1],[1,-1]]
+};
+
+function getMovesInt(type, fromInt, boardInt) {
+  const x = fromInt & 7, y = fromInt >> 3;
+  const moves = [];
+  const dirs  = DIRS[type];
+  if (type === 'knight' || type === 'king' || type === 'pawn') {
+    for (const [dx, dy] of dirs) {
+      const nx = x+dx, ny = y+dy;
+      if (inBoundsXY(nx, ny)) moves.push(nx + ny*8);
+    }
+    return moves;
+  }
+  for (const [dx, dy] of dirs) {
+    let nx = x+dx, ny = y+dy;
+    while (inBoundsXY(nx, ny)) {
+      const sq = nx + ny*8;
+      moves.push(sq);
+      if (boardInt.has(sq)) break;
+      nx += dx; ny += dy;
+    }
+  }
+  return moves;
+}
+
+function isPathSafeInt(fromInt, toInt, atkInt) {
+  // Knights jump — no intermediate squares to check.
+  // A knight move has |dx|+|dy|==3, which means stepping by sign(dx),sign(dy)
+  // never converges on the target. We detect a non-collinear move by checking
+  // that |dx|+|dy| is not 1 or 2 (i.e. not a straight/diagonal ray).
+  const ax = fromInt & 7, ay = fromInt >> 3;
+  const bx = toInt   & 7, by = toInt   >> 3;
+  const adx = Math.abs(bx - ax), ady = Math.abs(by - ay);
+  if (adx + ady > 2) return true; // knight move — always safe (no ray)
+  const dx = Math.sign(bx - ax), dy = Math.sign(by - ay);
+  let x = ax+dx, y = ay+dy;
+  while (x !== bx || y !== by) {
+    if (atkInt.has(x + y*8)) return false;
+    x += dx; y += dy;
+  }
+  return true;
+}
+
+function safeMovesInt(fromInt, boardInt, atkInt, pieceType) {
+  const result = [];
+  for (const m of getMovesInt(pieceType, fromInt, boardInt)) {
+    if (!atkInt.has(m) && isPathSafeInt(fromInt, m, atkInt))
+      result.push(m);
+  }
+  return result;
+}
+
+// ─── isPathSafe (string API, used by click-handler only) ─────────────────────
 
 function isPathSafe(from, to, attacked) {
-  let a = toCoord(from), b = toCoord(to);
-  let dx = Math.sign(b.x - a.x), dy = Math.sign(b.y - a.y);
-  let x = a.x + dx, y = a.y + dy;
+  const a = toCoord(from), b = toCoord(to);
+  const dx = Math.sign(b.x - a.x), dy = Math.sign(b.y - a.y);
+  let x = a.x+dx, y = a.y+dy;
   while (x !== b.x || y !== b.y) {
     if (attacked.has(toSquare(x, y))) return false;
     x += dx; y += dy;
@@ -102,139 +171,79 @@ function isPathSafe(from, to, attacked) {
   return true;
 }
 
-function safeMoves(sq, board, attacked, pieceType) {
-  let result = [];
-  for (let m of PieceEngine.getMoves(pieceType, sq, board)) {
-    if (!attacked.has(m) && isPathSafe(sq, m, attacked))
-      result.push(m);
-  }
-  return result;
-}
+// ─── Forward BFS — distance map only ─────────────────────────────────────────
+// Simple, correct, guaranteed to terminate (64-square board).
+// Returns Map<intSq, distance> from start, or null if end unreachable.
+// `dist` on the returned object is path-length in NODES (moves + 1).
 
-// ─── Bidirectional BFS ────────────────────────────────────────────────────────
-//
-// Expands level-by-level, alternating sides. Stops once the combined depth of
-// both frontiers equals `best` (the shortest meeting distance found so far).
-//
-// After finding `best`, we ensure fwd covers the full path depth so that
-// collectPaths can walk from start all the way to end.
-//
-// Returns { fwd, bwd, dist } or null.
-//   fwd  = Map<sq, distFromStart>
-//   bwd  = Map<sq, distFromEnd>
-//   dist = path length in NODES (= moves + 1)
+function forwardBFS(start, end, board, attacked, pieceType) {
+  const startInt = sqToInt(start);
+  const endInt   = sqToInt(end);
 
-function biDirBFS(start, end, board, attacked, pieceType) {
-  if (start === end) return null;
+  const boardInt = new Set();
+  for (const sq in board) boardInt.add(sqToInt(sq));
+  const atkInt = new Set();
+  for (const sq of attacked) atkInt.add(sqToInt(sq));
 
-  let fwd = new Map([[start, 0]]);
-  let bwd = new Map([[end,   0]]);
+  // Standard BFS — queue holds int squares, dist map records distance from start
+  const dist = new Map([[startInt, 0]]);
+  const queue = [startInt];
+  let qi = 0; // index into queue (avoids O(n) shift)
 
-  let fFront = [start];
-  let bFront = [end];
+  while (qi < queue.length) {
+    const sq = queue[qi++];
+    const d  = dist.get(sq);
 
-  function expandLevel(frontier, distMap) {
-    let next = [];
-    for (let sq of frontier) {
-      let d = distMap.get(sq);
-      for (let m of safeMoves(sq, board, attacked, pieceType)) {
-        if (!distMap.has(m)) {
-          distMap.set(m, d + 1);
-          next.push(m);
-        }
-      }
-    }
-    return next;
-  }
+    if (sq === endInt) break; // found — no need to explore further
 
-  // Scan a frontier for overlaps with the other map; return min combined dist.
-  function scanMeeting(frontier, myMap, otherMap) {
-    let best = Infinity;
-    for (let sq of frontier) {
-      if (otherMap.has(sq)) {
-        let d = myMap.get(sq) + otherMap.get(sq);
-        if (d < best) best = d;
-      }
-    }
-    return best;
-  }
-
-  let best = Infinity;
-
-  while (fFront.length > 0 || bFront.length > 0) {
-    // Current frontier depths
-    let fDepth = fFront.length > 0 ? fwd.get(fFront[0]) : Infinity;
-    let bDepth = bFront.length > 0 ? bwd.get(bFront[0]) : Infinity;
-
-    // Pruning: if the shallowest possible meeting from here >= best, stop
-    if (best < Infinity && fDepth + bDepth >= best) break;
-
-    // Expand whichever frontier is shallower (or fwd if tied)
-    if (fDepth <= bDepth) {
-      fFront = expandLevel(fFront, fwd);
-      if (fFront.length > 0) {
-        let m = scanMeeting(fFront, fwd, bwd);
-        if (m < best) best = m;
-      }
-    } else {
-      bFront = expandLevel(bFront, bwd);
-      if (bFront.length > 0) {
-        let m = scanMeeting(bFront, bwd, fwd);
-        if (m < best) best = m;
+    for (const m of safeMovesInt(sq, boardInt, atkInt, pieceType)) {
+      if (!dist.has(m)) {
+        dist.set(m, d + 1);
+        queue.push(m);
       }
     }
   }
 
-  if (best === Infinity) return null;
+  if (!dist.has(endInt)) return null;
 
-  // Ensure fwd is deep enough for collectPaths to reach `end`
-  // (best is in moves; we need fwd to have depth `best`)
-  while (fFront.length > 0 && fwd.get(fFront[0]) < best) {
-    fFront = expandLevel(fFront, fwd);
-  }
-  // One final expansion if end still not in fwd
-  if (!fwd.has(end) && fFront.length > 0) {
-    expandLevel(fFront, fwd);
-  }
-
-  return { fwd, bwd, dist: best + 1 }; // dist in nodes
+  return { dist, startInt, endInt, boardInt, atkInt,
+           pathDist: dist.get(endInt) + 1 }; // pathDist = nodes
 }
 
 // ─── Collect all shortest paths ───────────────────────────────────────────────
-//
-// DFS over the DAG defined by: sq -> m where
-//   fwd[m] == fwd[sq] + 1   AND   fwd[m] + bwd[m] == totalMoves
+// DFS using the dist map: only step to m where dist[m] == dist[sq]+1.
+// This is O(paths * pathLen) — bounded by RESULT_CAP.
 
-function collectPaths(start, end, board, attacked, pieceType, fwd, bwd, totalDist) {
-  const totalMoves = totalDist - 1;
+function collectPaths(fwdResult, pieceType, startStr, endStr) {
+  const { dist, startInt, endInt, boardInt, atkInt, pathDist } = fwdResult;
+  const totalMoves = pathDist - 1;
 
-  let results = [];
+  const results  = [];
   const RESULT_CAP = 50;
   const NODE_CAP   = 10000;
-  let nodeCount = 0;
+  let   nodeCount  = 0;
 
-  let stack = [[start, [start]]];
+  // stack: [intSq, stringPath]
+  const stack = [[startInt, [startStr]]];
 
   while (stack.length > 0) {
     if (++nodeCount > NODE_CAP || results.length >= RESULT_CAP) break;
 
-    let [sq, path] = stack.pop();
-    let d = fwd.get(sq);
+    const [sq, path] = stack.pop();
+    const d = dist.get(sq);
 
-    if (sq === end) {
+    if (sq === endInt) {
       results.push(path);
       continue;
     }
 
-    for (let m of safeMoves(sq, board, attacked, pieceType)) {
-      let md = fwd.get(m);
-      if (md !== d + 1) continue;          // not one step forward
+    if (d >= totalMoves) continue; // pruning: can't reach end in remaining moves
 
-      let bd = bwd.get(m);
-      if (bd === undefined) continue;       // not on any optimal path
-      if (md + bd !== totalMoves) continue; // not on THIS optimal length
-
-      stack.push([m, [...path, m]]);
+    for (const m of safeMovesInt(sq, boardInt, atkInt, pieceType)) {
+      const md = dist.get(m);
+      if (md === d + 1) { // one step closer to end
+        stack.push([m, [...path, intToSq(m)]]);
+      }
     }
   }
 
@@ -244,18 +253,19 @@ function collectPaths(start, end, board, attacked, pieceType, fwd, bwd, totalDis
 // ─── Public BFS API ───────────────────────────────────────────────────────────
 
 function bfsAll(start, end, board, attacked, pieceType) {
-  let r = biDirBFS(start, end, board, attacked, pieceType);
-  if (!r || r.dist < 3) return [];
-  let paths = collectPaths(start, end, board, attacked, pieceType, r.fwd, r.bwd, r.dist);
-  dbg(`bfsAll(${start}->${end}, ${pieceType}): dist=${r.dist}, paths=${paths.length}`);
+  const r = forwardBFS(start, end, board, attacked, pieceType);
+  if (!r || r.pathDist < 3) return [];
+  const paths = collectPaths(r, pieceType, start, end);
+  dbg(`bfsAll(${start}->${end}, ${pieceType}): dist=${r.pathDist}, paths=${paths.length}`);
   return paths;
 }
 
 function cheapReachable(start, end, board, attacked, pieceType) {
-  let r = biDirBFS(start, end, board, attacked, pieceType);
-  if (!r || r.dist < 3) return 0;
-  return r.dist;
+  const r = forwardBFS(start, end, board, attacked, pieceType);
+  if (!r || r.pathDist < 3) return 0;
+  return r.pathDist;
 }
+
 
 // ─── Puzzle Generator ─────────────────────────────────────────────────────────
 
@@ -430,13 +440,17 @@ class Game {
   render() {
     document.querySelectorAll('.cell').forEach(c => {
       c.textContent = '';
-      c.classList.remove('selected', 'blink');
+      c.classList.remove('selected', 'blink', 'player-piece', 'end-square');
     });
 
     let {s, e, pieces, playerPiece} = this.curr;
 
     document.querySelector(`[data-sq="${s}"]`).textContent = 'S';
-    document.querySelector(`[data-sq="${e}"]`).textContent = 'X';
+
+    // End square: checkered flag
+    let endCell = document.querySelector(`[data-sq="${e}"]`);
+    endCell.textContent = '🏁';
+    endCell.classList.add('end-square');
 
     pieces.forEach(p => {
       document.querySelector(`[data-sq="${p.square}"]`).textContent = PIECE_ICONS[p.type];
@@ -444,6 +458,7 @@ class Game {
 
     let me = document.querySelector(`[data-sq="${this.pos}"]`);
     me.textContent = PIECE_ICONS[playerPiece] || PIECE_ICONS.player;
+    me.classList.add('player-piece');
     if (this.selected) me.classList.add('selected');
 
     this.drawArrows();
