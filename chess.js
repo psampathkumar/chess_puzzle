@@ -132,18 +132,17 @@ function getMovesInt(type, fromInt, boardInt) {
 }
 
 function isPathSafeInt(fromInt, toInt, atkInt) {
-  // Knights jump — no intermediate squares to check.
-  // A knight move has |dx|+|dy|==3, which means stepping by sign(dx),sign(dy)
-  // never converges on the target. We detect a non-collinear move by checking
-  // that |dx|+|dy| is not 1 or 2 (i.e. not a straight/diagonal ray).
   const ax = fromInt & 7, ay = fromInt >> 3;
   const bx = toInt   & 7, by = toInt   >> 3;
   const adx = Math.abs(bx - ax), ady = Math.abs(by - ay);
-  if (adx + ady > 2) return true; // knight move — always safe (no ray)
+  // Knights jump: the only non-collinear move is (1,2) or (2,1).
+  // All other moves are rays (straight or diagonal) and need intermediate checks.
+  if ((adx === 1 && ady === 2) || (adx === 2 && ady === 1)) return true;
+  // Step along the ray and check every intermediate square.
   const dx = Math.sign(bx - ax), dy = Math.sign(by - ay);
-  let x = ax+dx, y = ay+dy;
+  let x = ax + dx, y = ay + dy;
   while (x !== bx || y !== by) {
-    if (atkInt.has(x + y*8)) return false;
+    if (atkInt.has(x + y * 8)) return false;
     x += dx; y += dy;
   }
   return true;
@@ -162,8 +161,10 @@ function safeMovesInt(fromInt, boardInt, atkInt, pieceType) {
 
 function isPathSafe(from, to, attacked) {
   const a = toCoord(from), b = toCoord(to);
+  const adx = Math.abs(b.x - a.x), ady = Math.abs(b.y - a.y);
+  if ((adx === 1 && ady === 2) || (adx === 2 && ady === 1)) return true; // knight jump
   const dx = Math.sign(b.x - a.x), dy = Math.sign(b.y - a.y);
-  let x = a.x+dx, y = a.y+dy;
+  let x = a.x + dx, y = a.y + dy;
   while (x !== b.x || y !== b.y) {
     if (attacked.has(toSquare(x, y))) return false;
     x += dx; y += dy;

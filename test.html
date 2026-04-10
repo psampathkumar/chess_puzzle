@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Chess Puzzle — Test Suite</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: monospace; background: #1a1a2e; color: #eee;
+         padding: 20px; margin: 0; }
+  h1   { color: #a0c4ff; margin-bottom: 4px; }
+  p.sub { color: #666; font-size: .88em; margin: 0 0 14px; }
+  h2   { color: #ffd6a5; margin: 22px 0 4px;
+         border-bottom: 1px solid #333; padding-bottom: 3px; }
+  .pass { color: #8fff8f; }
+  .fail { color: #ff6b6b; font-weight: bold; }
+  .info { color: #777; font-size: 0.87em; padding-left: 14px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  button { padding: 6px 14px; background: #16213e; color: #a0c4ff;
+           border: 1px solid #4a6fa5; border-radius: 4px; cursor: pointer;
+           font-family: monospace; font-size: .93em; }
+  button:hover:not(:disabled) { background: #0f3460; }
+  button:disabled { opacity: .45; cursor: default; }
+
+  /* ── Progress bar ── */
+  #progress-wrap {
+    width: 100%; max-width: 600px;
+    background: #111; border-radius: 4px;
+    height: 10px; margin-bottom: 10px;
+    display: none;
+  }
+  #progress-bar {
+    height: 10px; width: 0%;
+    background: #a0c4ff; border-radius: 4px;
+    transition: width .15s ease;
+  }
+  #progress-label {
+    font-size: .82em; color: #666; margin-bottom: 10px;
+  }
+
+  #summary { margin-top: 16px; font-size: 1.1em; padding: 8px 14px;
+             background: #0f3460; border-radius: 5px; display: inline-block; }
+  #out { max-width: 800px; }
+</style>
+</head>
+<body>
+<h1>♟ Chess Puzzle — Tests</h1>
+<p class="sub">All tests run against chess.js logic. Open console for debug logs.</p>
+
+<div class="controls">
+  <button id="btn-unit" onclick="runSuite('unit')">▶ Unit tests</button>
+  <button id="btn-bfs"  onclick="runSuite('bfs')">▶ BFS tests</button>
+  <button id="btn-gen"  onclick="runSuite('gen')">▶ Generator tests</button>
+  <button id="btn-all"  onclick="runSuite('all')">▶ Run all</button>
+  <button onclick="clearOut()">✕ Clear</button>
+</div>
+
+<div id="progress-wrap"><div id="progress-bar"></div></div>
+<div id="progress-label"></div>
+<div id="out"></div>
+<div id="summary"></div>
+
+<!-- Stub DOM before chess.js loads so boot-time code doesn't error -->
+<script>
+const _stub = () => ({
+  innerHTML:'', textContent:'', disabled:false, checked:false,
+  appendChild:()=>{}, addEventListener:()=>{},
+  classList:{ add:()=>{}, remove:()=>{} },
+  setAttribute:()=>{}, getAttribute:()=>null,
+  querySelectorAll:()=>[], querySelector:()=>_stub(),
+});
+const _gbi  = document.getElementById.bind(document);
+const _qs   = document.querySelector.bind(document);
+const _qsa  = document.querySelectorAll.bind(document);
+const _cens = document.createElementNS.bind(document);
+document.getElementById   = () => _stub();
+document.querySelector    = () => _stub();
+document.querySelectorAll = () => [];
+document.createElementNS  = (ns, t) => ns && ns.includes('svg') ? _stub() : _cens(ns,t);
+</script>
+<script src="chess.js"></script>
+<script>
+// Restore real DOM
+document.getElementById   = _gbi;
+document.querySelector    = _qs;
+document.querySelectorAll = _qsa;
+document.createElementNS  = _cens;
+
+// ── Framework ────────────────────────────────────────────────────────────────
+let _pass = 0, _fail = 0, _total = 0, _done = 0;
+
+const $out  = () => document.getElementById('out');
+const $bar  = () => document.getElementById('progress-bar');
+const $wrap = () => document.getElementById('progress-wrap');
+const $lbl  = () => document.getElementById('progress-label');
+
+// yield to browser so it can repaint
+const tick  = () => new Promise(r => setTimeout(r, 0));
+
+function setProgress(done, total) {
+  $wrap().style.display = 'block';
+  $bar().style.width = total > 0 ? (done / total * 100) + '%' : '0%';
+  $lbl().textContent = `${done} / ${total} assertions`;
+}
+
+function section(name) {
+  $out().innerHTML += `<h2>${name}</h2>`;
+}
+
+function assert(label, ok, detail = '') {
+  _pass += ok ? 1 : 0;
+  _fail += ok ? 0 : 1;
+  _done++;
+  setProgress(_done, _total);
+  const cls = ok ? 'pass' : 'fail';
+  const sym = ok ? '✓' : '✗';
+  const det = (!ok && detail) ? ` — ${detail}` : '';
+  $out().innerHTML += `<div class="${cls}">${sym} ${label}${det}</div>`;
+}
+
+function info(msg) {
+  $out().innerHTML += `<div class="info">ℹ ${msg}</div>`;
+}
+
+function clearOut() {
+  $out().innerHTML = '';
+  document.getElementById('summary').innerHTML = '';
+  $wrap().style.display = 'none';
+  $bar().style.width = '0%';
+  $lbl().textContent = '';
+  _pass = _fail = _total = _done = 0;
+}
+
+function showSummary() {
+  const col = _fail === 0 ? '#8fff8f' : '#ff6b6b';
+  document.getElementById('summary').innerHTML =
+    `<span style="color:${col}">${_pass+_fail} assertions — ` +
+    `${_pass} passed, ${_fail} failed</span>`;
+  $wrap().style.display = 'none';
+}
+
+function disableButtons(on) {
+  ['btn-unit','btn-bfs','btn-gen','btn-all'].forEach(id => {
+    document.getElementById(id).disabled = on;
+  });
+}
+
+// ── Test definitions (each returns an async function) ────────────────────────
+
+const SUITES = {
+
+  unit: async function() {
+    section('Coordinates');
+    assert('toCoord a1 → {x:0,y:0}', JSON.stringify(toCoord('a1')) === '{"x":0,"y":0}');
+    assert('toCoord h8 → {x:7,y:7}', JSON.stringify(toCoord('h8')) === '{"x":7,"y":7}');
+    assert('toSquare(0,0) = a1', toSquare(0,0) === 'a1');
+    assert('toSquare(7,7) = h8', toSquare(7,7) === 'h8');
+    assert('roundtrip e4', toSquare(toCoord('e4').x, toCoord('e4').y) === 'e4');
+    assert('inBounds(0,0)', inBounds(0,0));
+    assert('!inBounds(-1,0)', !inBounds(-1,0));
+    assert('!inBounds(8,0)', !inBounds(8,0));
+    await tick();
+
+    section('Rook moves');
+    const rm = PieceEngine.getMoves('rook','a1',{});
+    assert('rook a1: 14 moves on empty board', rm.length === 14, `got ${rm.length}`);
+    assert('rook a1 reaches h1', rm.includes('h1'));
+    assert('rook a1 reaches a8', rm.includes('a8'));
+    assert('rook a1 no diagonal b2', !rm.includes('b2'));
+    const rb = PieceEngine.getMoves('rook','a1',{'a4':'pawn'});
+    assert('rook blocked at a4: no a5', !rb.includes('a5'));
+    assert('rook blocked at a4: yes a4 (blocker)', rb.includes('a4'));
+    await tick();
+
+    section('Bishop moves');
+    const bm = PieceEngine.getMoves('bishop','d4',{});
+    assert('bishop d4 → e5', bm.includes('e5'));
+    assert('bishop d4 → c3', bm.includes('c3'));
+    assert('bishop d4 no straight d5', !bm.includes('d5'));
+    const ba = PieceEngine.getMoves('bishop','a1',{});
+    assert('bishop a1 → h8 (same color)', ba.includes('h8'));
+    assert('bishop a1 no a2 (wrong color)', !ba.includes('a2'));
+    await tick();
+
+    section('Knight moves');
+    const kn = PieceEngine.getMoves('knight','d4',{});
+    assert('knight d4: 8 moves', kn.length === 8, `got ${kn.length}`);
+    assert('knight d4 → e6', kn.includes('e6'));
+    const kc = PieceEngine.getMoves('knight','a1',{});
+    assert('knight a1: 2 moves', kc.length === 2, `got ${kc.length}`);
+    await tick();
+
+    section('Attack map');
+    const atk = PieceEngine.getAttackMap([{type:'rook',square:'d4'}], {'d4':'rook'});
+    assert('rook d4: own square unsafe', atk.has('d4'));
+    assert('rook d4: attacks d8', atk.has('d8'));
+    assert('rook d4: attacks a4', atk.has('a4'));
+    assert('rook d4: no e5', !atk.has('e5'));
+    await tick();
+
+    section('isPathSafe — intermediate square checks');
+    // Knight jumps: no intermediate checks regardless of distance
+    assert('knight a1→c2: jump, always safe',           isPathSafe('a1','c2', new Set()));
+    assert('knight a1→c2: blocked mid b2, still safe',  isPathSafe('a1','c2', new Set(['b2'])));
+    assert('knight a1→b3: jump, always safe',            isPathSafe('a1','b3', new Set()));
+    // Rook: long moves MUST check intermediates (this was the screenshot bug)
+    assert('rook a1→h1: no blocks, safe',               isPathSafe('a1','h1', new Set()));
+    assert('rook a1→h1: d1 blocked → unsafe',          !isPathSafe('a1','h1', new Set(['d1'])));
+    assert('rook a1→a8: a5 blocked → unsafe',          !isPathSafe('a1','a8', new Set(['a5'])));
+    assert('rook a1→b1: single step, safe',              isPathSafe('a1','b1', new Set()));
+    // Bishop: long diagonal moves also need intermediate checks
+    assert('bishop a1→h8: no blocks, safe',             isPathSafe('a1','h8', new Set()));
+    assert('bishop a1→h8: d4 blocked → unsafe',        !isPathSafe('a1','h8', new Set(['d4'])));
+    // Int API equivalents
+    assert('isPathSafeInt rook a1→h1: d1 blocked',     !isPathSafeInt(sqToInt('a1'),sqToInt('h1'), new Set([sqToInt('d1')])));
+    assert('isPathSafeInt bishop a1→h8: d4 blocked',   !isPathSafeInt(sqToInt('a1'),sqToInt('h8'), new Set([sqToInt('d4')])));
+    assert('isPathSafeInt knight a1→c2: jump safe',     isPathSafeInt(sqToInt('a1'),sqToInt('c2'), new Set([sqToInt('b2')])));
+    await tick();
+  },
+
+  bfs: async function() {
+    section('biDirBFS — distances');
+    let r;
+
+    r = biDirBFS('a1','h1', {}, new Set(), 'rook');
+    assert('rook a1→h1 reachable', r !== null);
+    assert('rook a1→h1 dist=2 (1 move)', r?.dist === 2, `got ${r?.dist}`);
+    await tick();
+
+    r = biDirBFS('a1','h8', {}, new Set(), 'rook');
+    assert('rook a1→h8 reachable', r !== null);
+    assert('rook a1→h8 dist=3 (2 moves)', r?.dist === 3, `got ${r?.dist}`);
+    await tick();
+
+    r = biDirBFS('a1','h8', {}, new Set(), 'bishop');
+    assert('bishop a1→h8 reachable', r !== null);
+    assert('bishop a1→h8 dist=2', r?.dist === 2, `got ${r?.dist}`);
+    await tick();
+
+    r = biDirBFS('a1','a2', {}, new Set(), 'bishop');
+    assert('bishop a1→a2 null (color mismatch)', r === null);
+    await tick();
+
+    r = biDirBFS('a1','h8', {}, new Set(), 'queen');
+    assert('queen a1→h8 dist=2', r?.dist === 2, `got ${r?.dist}`);
+    await tick();
+
+    r = biDirBFS('a1','b3', {}, new Set(), 'knight');
+    assert('knight a1→b3 dist=2', r?.dist === 2, `got ${r?.dist}`);
+    await tick();
+
+    r = biDirBFS('a1','a2', {}, new Set(), 'knight');
+    assert('knight a1→a2 reachable', r !== null);
+    info(`knight a1→a2 dist=${r?.dist}`);
+    await tick();
+
+    section('biDirBFS — attack blocking');
+
+    r = biDirBFS('a1','h1', {}, new Set(['h1']), 'rook');
+    assert('rook a1→h1: end attacked → null', r === null);
+    await tick();
+
+    r = biDirBFS('a1','h1', {}, new Set(['b1','c1','d1','e1','f1','g1','h1']), 'rook');
+    assert('rook a1→h1: full rank attacked → null', r === null);
+    await tick();
+
+    section('bfsAll — path collection');
+
+    const paths = bfsAll('a1','h8', {}, new Set(), 'rook');
+    assert('rook a1→h8: paths found', paths.length > 0);
+    assert('rook a1→h8: all length=3', paths.every(p => p.length === 3),
+      `lengths=${paths.map(p=>p.length)}`);
+    assert('rook a1→h8: all start a1', paths.every(p => p[0] === 'a1'));
+    assert('rook a1→h8: all end h8',   paths.every(p => p[p.length-1] === 'h8'));
+    info(`rook a1→h8: ${paths.length} optimal path(s)`);
+    await tick();
+
+    // 1-move paths must be filtered out (dist < 3)
+    assert('queen a1→h8 (1 move) → []', bfsAll('a1','h8',{},new Set(),'queen').length === 0);
+    assert('rook a1→h1 (1 move) → []',  bfsAll('a1','h1',{},new Set(),'rook').length === 0);
+    await tick();
+
+    section('cheapReachable');
+    assert('rook a1→h8 ≥ 3',   cheapReachable('a1','h8',{},new Set(),'rook') >= 3);
+    assert('rook a1→h1 = 0 (1 move)', cheapReachable('a1','h1',{},new Set(),'rook') === 0);
+    assert('bishop a1→a2 = 0', cheapReachable('a1','a2',{},new Set(),'bishop') === 0);
+    assert('knight a1→a2 ≥ 3', cheapReachable('a1','a2',{},new Set(),'knight') >= 3);
+    await tick();
+  },
+
+  gen: async function() {
+    section('Generator — correctness (levels 1–4)');
+
+    for (let level of [1, 2, 3, 4]) {
+      const t0 = performance.now();
+      const pz = new Generator(level).generate();
+      const ms = (performance.now() - t0).toFixed(0);
+      const L  = `L${level}`;
+
+      assert(`${L}: returns puzzle`,          !!pz);
+      assert(`${L}: start valid square`,      typeof pz.s === 'string' && pz.s.length === 2);
+      assert(`${L}: end valid square`,        typeof pz.e === 'string' && pz.e.length === 2);
+      assert(`${L}: start ≠ end`,             pz.s !== pz.e);
+      assert(`${L}: playerPiece valid`,       PLAYER_PIECES.includes(pz.playerPiece));
+      assert(`${L}: has solutions`,           Array.isArray(pz.sol) && pz.sol.length > 0);
+      assert(`${L}: path length ≥ 3`,         pz.sol[0].length >= 3, `got ${pz.sol[0].length}`);
+      assert(`${L}: path starts at s`,        pz.sol[0][0] === pz.s);
+      assert(`${L}: path ends at e`,          pz.sol[0][pz.sol[0].length-1] === pz.e);
+      assert(`${L}: no timeout`,              !pz.timeout);
+      if (level === 1)
+        assert(`${L}: 0 opponents`,           pz.pieces.length === 0);
+
+      if (pz.pieces.length > 0) {
+        const board = {};
+        pz.pieces.forEach(p => board[p.square] = p.type);
+        const atk = PieceEngine.getAttackMap(pz.pieces, board);
+        assert(`${L}: start not attacked`, !atk.has(pz.s));
+        assert(`${L}: end not attacked`,   !atk.has(pz.e));
+      }
+
+      if (!pz.timeout) {
+        const board = {};
+        pz.pieces.forEach(p => board[p.square] = p.type);
+        const atk = PieceEngine.getAttackMap(pz.pieces, board);
+        let valid = true;
+        for (let i = 0; i < pz.sol[0].length - 1; i++) {
+          const from = pz.sol[0][i], to = pz.sol[0][i+1];
+          const legal = PieceEngine.getMoves(pz.playerPiece, from, board);
+          if (!legal.includes(to) || atk.has(to) || !isPathSafe(from, to, atk)) {
+            valid = false; info(`  Bad move step ${i}: ${from}→${to}`); break;
+          }
+        }
+        assert(`${L}: solution is legal+safe`, valid);
+      }
+
+      info(`${L}: ${ms}ms | ${pz.playerPiece} | path=${pz.sol[0].length} | opp=${pz.pieces.length} | sols=${pz.sol.length}`);
+      await tick();
+    }
+  }
+};
+
+// Count total assertions in each suite by doing a dry-run with a counting shim
+function countAssertions(suiteKey) {
+  // Rough static counts per suite (faster than dry-run)
+  return { unit: 39, bfs: 22, gen: 52 }[suiteKey] ?? 20;
+}
+
+async function runSuite(key) {
+  clearOut();
+  disableButtons(true);
+
+  const keys = key === 'all' ? ['unit', 'bfs', 'gen'] : [key];
+  _total = keys.reduce((s, k) => s + countAssertions(k), 0);
+  setProgress(0, _total);
+
+  for (const k of keys) {
+    await SUITES[k]();
+  }
+
+  showSummary();
+  disableButtons(false);
+}
+</script>
+</body>
+</html>
