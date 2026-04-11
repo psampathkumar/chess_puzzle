@@ -2,11 +2,22 @@
 
 const FILES = ['a','b','c','d','e','f','g','h'];
 
-const PIECE_ICONS = {
-  rook:'♜', bishop:'♝', knight:'♞',
-  queen:'♛', king:'♚', pawn:'♟',
-  player:'♖'
+// Unicode chess pieces.
+// Opponent pieces use the filled black set; player uses the white (outline) set.
+const PIECE_ICONS_OPP = {
+  rook:'♜', bishop:'♝', knight:'♞', queen:'♛', king:'♚', pawn:'♟'
 };
+const PIECE_ICONS_PLAYER = {
+  rook:'♖', bishop:'♗', knight:'♘', queen:'♕', king:'♔'
+};
+
+function pieceHTML(type, player = false) {
+  const icon = player
+    ? (PIECE_ICONS_PLAYER[type] || '♙')
+    : (PIECE_ICONS_OPP[type]    || '♟');
+  const cls = player ? 'piece-badge piece-badge--player' : 'piece-badge piece-badge--opponent';
+  return `<span class="${cls}">${icon}</span>`;
+}
 
 const PLAYER_PIECES = ['rook','bishop','knight','queen'];
 
@@ -458,7 +469,7 @@ class Game {
 
   render() {
     document.querySelectorAll('.cell').forEach(c => {
-      c.textContent = '';
+      c.innerHTML = '';
       c.classList.remove('selected', 'blink', 'player-piece', 'end-square');
     });
 
@@ -473,11 +484,12 @@ class Game {
     endCell.classList.add('end-square');
 
     pieces.forEach(p => {
-      document.querySelector(`[data-sq="${p.square}"]`).textContent = PIECE_ICONS[p.type];
+      const cell = document.querySelector(`[data-sq="${p.square}"]`);
+      cell.innerHTML = pieceHTML(p.type, false);
     });
 
     let me = document.querySelector(`[data-sq="${this.pos}"]`);
-    me.textContent = PIECE_ICONS[playerPiece] || PIECE_ICONS.player;
+    me.innerHTML = pieceHTML(playerPiece, true);
     me.classList.add('player-piece');
     if (this.selected) me.classList.add('selected');
 
@@ -650,6 +662,9 @@ document.getElementById('toggleHints')
   .addEventListener('change', () => { if (game.curr) game.render(); });
 
 document.getElementById('board').addEventListener('click', e => {
-  if (!e.target.dataset.sq || !game.curr) return;
-  game.handleClick(e.target.dataset.sq);
+  // Clicks may land on a child span (piece badge) rather than the cell itself.
+  // Walk up to the nearest ancestor that carries data-sq.
+  const cell = e.target.closest('[data-sq]');
+  if (!cell || !game.curr) return;
+  game.handleClick(cell.dataset.sq);
 });

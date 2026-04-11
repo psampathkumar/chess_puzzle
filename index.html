@@ -7,80 +7,103 @@
 
 <style>
 * { box-sizing: border-box; }
-body { font-family: Arial, sans-serif; display:flex; gap:24px; padding:16px; background:#1a1a2e; color:#eee; margin:0; }
+body {
+  font-family: Arial, sans-serif;
+  display: flex; gap: 24px; padding: 16px;
+  background: #1a1a2e; color: #eee; margin: 0;
+  min-height: 100vh;
+}
 
-#left { display:flex; flex-direction:column; align-items:center; }
+#left { display: flex; flex-direction: column; align-items: center; }
 
-h2 { color:#a0c4ff; margin:0 0 8px; letter-spacing:.5px; }
+h2 { color: #a0c4ff; margin: 0 0 8px; letter-spacing: .5px; }
 
 /* ── Description box ── */
 #description {
-  max-width:480px;
-  background:#0f3460;
-  border:1px solid #4a6fa5;
-  border-radius:6px;
-  padding:8px 12px;
-  font-size:.9em;
-  color:#c8d8f0;
-  line-height:1.45;
-  margin-bottom:8px;
-  text-align:center;
-  min-height:2.6em;
+  max-width: 480px;
+  background: #0f3460;
+  border: 1px solid #4a6fa5;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: .9em;
+  color: #c8d8f0;
+  line-height: 1.45;
+  margin-bottom: 8px;
+  text-align: center;
+  min-height: 2.6em;
 }
 
 /* ── Controls ── */
 .controls {
-  display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap; justify-content:center;
+  display: flex; gap: 8px; align-items: center;
+  margin-bottom: 6px; flex-wrap: wrap; justify-content: center;
 }
 .controls button {
-  padding:5px 14px; background:#16213e; color:#a0c4ff;
-  border:1px solid #4a6fa5; border-radius:4px; cursor:pointer; font-size:.9em;
+  padding: 5px 14px; background: #16213e; color: #a0c4ff;
+  border: 1px solid #4a6fa5; border-radius: 4px;
+  cursor: pointer; font-size: .9em;
 }
-.controls button:hover:not(:disabled) { background:#0f3460; }
-.controls button:disabled { opacity:.4; cursor:default; }
-.controls label { font-size:.9em; color:#aaa; display:flex; align-items:center; gap:4px; }
+.controls button:hover:not(:disabled) { background: #0f3460; }
+.controls button:disabled { opacity: .4; cursor: default; }
+.controls label { font-size: .9em; color: #aaa; display: flex; align-items: center; gap: 4px; }
 
 /* ── Board ── */
 #board {
-  display:grid;
+  display: grid;
   grid-template-columns: repeat(8, 60px);
-  position:relative;
-  border:2px solid #4a6fa5;
-  border-radius:2px;
+  position: relative;
+  border: 2px solid #4a6fa5;
+  border-radius: 2px;
 }
 
 .cell {
-  width:60px; height:60px;
-  display:flex; align-items:center; justify-content:center;
-  font-size:28px;
-  cursor:pointer;
-  position:relative;
+  width: 60px; height: 60px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  position: relative;
 }
 
-.dark  { background:#769656; }
-.light { background:#eeeed2; }
-
-/* ── Player piece: white with dark shadow for both square colours ── */
-.player-piece {
-  color: #ffffff;
-  text-shadow:
-    0 0 3px rgba(0,0,0,0.9),
-    0 1px 5px rgba(0,0,0,0.8);
-}
+.dark  { background: #769656; }
+.light { background: #eeeed2; }
 
 .selected { outline: 3px solid #ff4444; outline-offset: -3px; }
 
+/* ── Piece badges ── */
+.piece-badge {
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  width: 40px; height: 40px;
+  border-radius: 6px;
+  font-size: 26px;
+  user-select: none;
+  line-height: 1;
+}
+
+/* Opponent: black pieces — force colour so they read on both square tones */
+.piece-badge--opponent {
+  color: #111111;
+  text-shadow: 0 1px 2px rgba(255,255,255,0.35);
+}
+
+/* Player: white pieces — dark shadow for contrast on both square colours */
+.piece-badge--player {
+  color: #ffffff;
+  text-shadow:
+    0 0 3px rgba(0,0,0,0.95),
+    0 1px 5px rgba(0,0,0,0.8);
+}
+
 /* ── Start marker ── */
 .start-marker {
-  display:inline-flex; align-items:center; justify-content:center;
-  width:36px; height:36px;
-  background:#27ae60;
-  color:#fff;
-  font-size:15px;
-  font-weight:bold;
-  border-radius:50%;
-  border:2px solid #1e8449;
-  line-height:1;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px;
+  background: #27ae60;
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  border-radius: 50%;
+  border: 2px solid #1e8449;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
 }
 
 /* ── End square ── */
@@ -97,32 +120,63 @@ h2 { color:#a0c4ff; margin:0 0 8px; letter-spacing:.5px; }
 .blink { animation: blinkRed 0.5s ease-in-out 3; }
 @keyframes blinkRed {
   0%   { box-shadow: 0 0 0px red; }
-  50%  { box-shadow: 0 0 16px red; }
+  50%  { box-shadow: 0 0 18px red; }
   100% { box-shadow: 0 0 0px red; }
 }
 
 /* ── Status ── */
 #status {
-  margin-top:8px;
-  font-weight:bold;
-  font-size:.95em;
-  color:#ffd6a5;
-  min-height:1.4em;
-  text-align:center;
+  margin-top: 8px;
+  font-weight: bold;
+  font-size: .95em;
+  color: #ffd6a5;
+  min-height: 1.4em;
+  text-align: center;
 }
 
 /* ── SVG overlay ── */
 svg {
-  position:absolute; top:0; left:0;
-  pointer-events:none;
-  width:480px; height:480px;
+  position: absolute; top: 0; left: 0;
+  pointer-events: none;
+  width: 480px; height: 480px;
 }
 
-/* ── History panel ── */
-#history { min-width:200px; }
-#history h3 { color:#a0c4ff; margin-top:0; }
-#list { padding-left:18px; }
-#list li { margin-bottom:4px; font-size:.9em; color:#ccc; }
+/* ── Right panel ── */
+#right { min-width: 210px; display: flex; flex-direction: column; gap: 20px; }
+
+/* ── Legend ── */
+#legend {
+  background: #0f3460;
+  border: 1px solid #4a6fa5;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+#legend h3 {
+  color: #a0c4ff;
+  margin: 0 0 10px;
+  font-size: 1em;
+}
+.legend-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 7px;
+  font-size: .88em; color: #ccc;
+}
+.legend-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: 5px;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.legend-badge--opp   { color: #111; text-shadow: 0 1px 2px rgba(255,255,255,0.3); background: #d4c9a8; border-radius: 4px; }
+.legend-badge--player{ color: #fff; text-shadow: 0 0 3px rgba(0,0,0,0.9), 0 1px 4px rgba(0,0,0,0.7); background: #6a9442; border-radius: 4px; }
+.legend-name { color: #e0e0e0; }
+.legend-note { color: #888; font-size: .82em; }
+
+/* ── History ── */
+#history h3 { color: #a0c4ff; margin-top: 0; margin-bottom: 8px; }
+#list { padding-left: 18px; margin: 0; }
+#list li { margin-bottom: 4px; font-size: .9em; color: #ccc; }
 </style>
 </head>
 
@@ -140,9 +194,57 @@ svg {
   <div id="board"></div>
 </div>
 
-<div id="history">
-  <h3>History</h3>
-  <ul id="list"></ul>
+<div id="right">
+
+  <div id="legend">
+    <h3>Piece Guide</h3>
+
+    <div style="font-size:.78em;color:#888;margin-bottom:8px;font-style:italic;">
+      White ♔ = you &nbsp;·&nbsp; Black ♚ = opponent
+    </div>
+
+    <div class="legend-row">
+      <span class="legend-badge legend-badge--player">♔</span>
+      <span class="legend-badge legend-badge--opp">♚</span>
+      <span class="legend-name">King</span>
+      <span class="legend-note">— 1 step any dir</span>
+    </div>
+    <div class="legend-row">
+      <span class="legend-badge legend-badge--player">♕</span>
+      <span class="legend-badge legend-badge--opp">♛</span>
+      <span class="legend-name">Queen</span>
+      <span class="legend-note">— any dir, any dist</span>
+    </div>
+    <div class="legend-row">
+      <span class="legend-badge legend-badge--player">♖</span>
+      <span class="legend-badge legend-badge--opp">♜</span>
+      <span class="legend-name">Rook</span>
+      <span class="legend-note">— straight lines</span>
+    </div>
+    <div class="legend-row">
+      <span class="legend-badge legend-badge--player">♗</span>
+      <span class="legend-badge legend-badge--opp">♝</span>
+      <span class="legend-name">Bishop</span>
+      <span class="legend-note">— diagonals</span>
+    </div>
+    <div class="legend-row">
+      <span class="legend-badge legend-badge--player">♘</span>
+      <span class="legend-badge legend-badge--opp">♞</span>
+      <span class="legend-name">Knight</span>
+      <span class="legend-note">— L-shape jump</span>
+    </div>
+    <div class="legend-row">
+      <span class="legend-badge legend-badge--opp" style="margin-right:36px;">♟</span>
+      <span class="legend-name">Pawn</span>
+      <span class="legend-note">— attacks diagonally</span>
+    </div>
+  </div>
+
+  <div id="history">
+    <h3>History</h3>
+    <ul id="list"></ul>
+  </div>
+
 </div>
 
 <script src="chess.js"></script>
