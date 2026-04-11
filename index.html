@@ -6,75 +6,136 @@
 <title>Chess Path Puzzle</title>
 
 <style>
-body { font-family: Arial; display:flex; gap:20px; }
+* { box-sizing: border-box; }
+body { font-family: Arial, sans-serif; display:flex; gap:24px; padding:16px; background:#1a1a2e; color:#eee; margin:0; }
+
 #left { display:flex; flex-direction:column; align-items:center; }
 
+h2 { color:#a0c4ff; margin:0 0 8px; letter-spacing:.5px; }
+
+/* ── Description box ── */
+#description {
+  max-width:480px;
+  background:#0f3460;
+  border:1px solid #4a6fa5;
+  border-radius:6px;
+  padding:8px 12px;
+  font-size:.9em;
+  color:#c8d8f0;
+  line-height:1.45;
+  margin-bottom:8px;
+  text-align:center;
+  min-height:2.6em;
+}
+
+/* ── Controls ── */
+.controls {
+  display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap; justify-content:center;
+}
+.controls button {
+  padding:5px 14px; background:#16213e; color:#a0c4ff;
+  border:1px solid #4a6fa5; border-radius:4px; cursor:pointer; font-size:.9em;
+}
+.controls button:hover:not(:disabled) { background:#0f3460; }
+.controls button:disabled { opacity:.4; cursor:default; }
+.controls label { font-size:.9em; color:#aaa; display:flex; align-items:center; gap:4px; }
+
+/* ── Board ── */
 #board {
   display:grid;
   grid-template-columns: repeat(8, 60px);
-  margin-top:20px;
   position:relative;
+  border:2px solid #4a6fa5;
+  border-radius:2px;
 }
 
 .cell {
   width:60px; height:60px;
   display:flex; align-items:center; justify-content:center;
-  border:1px solid #333;
   font-size:28px;
   cursor:pointer;
+  position:relative;
 }
 
-.dark { background:#769656; }
+.dark  { background:#769656; }
 .light { background:#eeeed2; }
 
-.selected { outline: 3px solid red; }
-
-/* Player piece: vivid cyan — sharp contrast on both light (#eeeed2) and dark (#769656) squares */
+/* ── Player piece: white with dark shadow for both square colours ── */
 .player-piece {
-  color: #00cfff;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.65), 0 0 8px rgba(0, 207, 255, 0.4);
+  color: #ffffff;
+  text-shadow:
+    0 0 3px rgba(0,0,0,0.9),
+    0 1px 5px rgba(0,0,0,0.8);
 }
 
-/* End square: subtle green pulse to draw the eye */
+.selected { outline: 3px solid #ff4444; outline-offset: -3px; }
+
+/* ── Start marker ── */
+.start-marker {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:36px; height:36px;
+  background:#27ae60;
+  color:#fff;
+  font-size:15px;
+  font-weight:bold;
+  border-radius:50%;
+  border:2px solid #1e8449;
+  line-height:1;
+}
+
+/* ── End square ── */
 .end-square {
-  background: #4a7c59 !important;
+  background: #2e7d52 !important;
   animation: pulseGreen 1.8s ease-in-out infinite;
 }
 @keyframes pulseGreen {
-  0%, 100% { background: #4a7c59 !important; }
-  50%       { background: #5fa870 !important; }
+  0%, 100% { background: #2e7d52 !important; }
+  50%       { background: #3da86e !important; }
 }
 
-.blink {
-  animation: blinkRed 0.5s ease-in-out 3;
-}
-
+/* ── Blink attacker ── */
+.blink { animation: blinkRed 0.5s ease-in-out 3; }
 @keyframes blinkRed {
-  0% { box-shadow:0 0 0px red; }
-  50% { box-shadow:0 0 15px red; }
-  100% { box-shadow:0 0 0px red; }
+  0%   { box-shadow: 0 0 0px red; }
+  50%  { box-shadow: 0 0 16px red; }
+  100% { box-shadow: 0 0 0px red; }
 }
 
-#status { margin-top:10px; font-weight:bold; }
+/* ── Status ── */
+#status {
+  margin-top:8px;
+  font-weight:bold;
+  font-size:.95em;
+  color:#ffd6a5;
+  min-height:1.4em;
+  text-align:center;
+}
 
-#history { min-width:200px; }
-
+/* ── SVG overlay ── */
 svg {
-  position:absolute;
-  top:0;
-  left:0;
+  position:absolute; top:0; left:0;
   pointer-events:none;
+  width:480px; height:480px;
 }
+
+/* ── History panel ── */
+#history { min-width:200px; }
+#history h3 { color:#a0c4ff; margin-top:0; }
+#list { padding-left:18px; }
+#list li { margin-bottom:4px; font-size:.9em; color:#ccc; }
 </style>
 </head>
 
 <body>
 
 <div id="left">
-  <h2>Chess Path Puzzle</h2>
-  <button id="nextBtn" onclick="game.nextLevel()">Next Level</button>
-  <button id="redoBtn" onclick="game.redo()">Redo Puzzle</button>
-  <label><input type="checkbox" id="toggleHints"/> Show Solution</label>
+  <h2>♟ Chess Path Puzzle</h2>
+  <div id="description">Loading puzzle…</div>
+  <div class="controls">
+    <button id="nextBtn" onclick="game.nextLevel()">Next Level</button>
+    <button id="redoBtn" onclick="game.redo()">Redo Puzzle</button>
+    <label><input type="checkbox" id="toggleHints"/> Show Solution</label>
+  </div>
   <div id="status"></div>
   <div id="board"></div>
 </div>

@@ -310,6 +310,8 @@ class Generator {
 
           let sq = this.rand();
           if (sq === s || sq === e || board[sq]) continue;
+          // Pawns cannot legally stand on rank 1 or rank 8
+          if (type === 'pawn' && (sq[1] === '1' || sq[1] === '8')) continue;
 
           pieces.push({type, square: sq});
           board[sq] = type;
@@ -338,7 +340,7 @@ class Generator {
 
       if (sol.length > 0 && sol[0].length >= 3) {
         dbg(`Puzzle OK: ${(performance.now()-t0).toFixed(0)}ms, attempt=${attempt+1}/${MAX_ATTEMPTS}, level=${this.level}, ${playerPiece}, path=${sol[0].length}, opponents=${pieces.length}`);
-        return { s, e, pieces, sol, playerPiece, complexity: sol[0].length * pieces.length };
+        return { s, e, pieces, sol, playerPiece, complexity: sol[0].length - 1 };
       }
     }
 
@@ -348,7 +350,7 @@ class Generator {
       pieces:[],
       sol:[['a1','a8','h8']],
       playerPiece:'rook',
-      complexity:2,
+      complexity:2, // 2 moves
       timeout:true
     };
   }
@@ -372,11 +374,14 @@ function createBoard() {
   let svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('width', 480);
   svg.setAttribute('height', 480);
-  svg.innerHTML = `<defs>
-    <marker id="arrow" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-      <path d="M0,0 L6,3 L0,6 Z" fill="blue"/>
-    </marker>
-  </defs>`;
+  const PATH_COLORS = ['#4a9eff','#ff6b35','#3ddc84','#f5c518','#c77dff'];
+  const markerDefs = PATH_COLORS.map((c, i) =>
+    `<marker id="arrow${i}" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="${c}"/>
+    </marker>`
+  ).join('');
+  svg.innerHTML = `<defs>${markerDefs}</defs>`;
+  svg.dataset.pathColors = JSON.stringify(PATH_COLORS);
   svg.id = 'arrows';
   b.appendChild(svg);
 }
@@ -423,13 +428,26 @@ class Game {
   }
 
   reset() {
-    this.pos       = this.curr.s;
-    this.selected  = false;
-    this.invalid   = 0;
-    this.startTime = performance.now();
+    this.pos        = this.curr.s;
+    this.selected   = false;
+    this.invalid    = 0;
+    this.moveCount  = 0; // moves made so far this puzzle
+    this.startTime  = performance.now();
 
-    let msg = `Piece: ${this.curr.playerPiece} | Complexity: ${this.curr.complexity}`;
-    if (this.curr.timeout) msg = '⚠ fallback puzzle | ' + msg;
+    const optMoves = this.curr.complexity; // moves in optimal solution
+    const pieceLabel = this.curr.playerPiece.charAt(0).toUpperCase() + this.curr.playerPiece.slice(1);
+    const oppCount = this.curr.pieces.length;
+    const oppDesc = oppCount === 0 ? 'no opponent pieces'
+                  : oppCount === 1 ? '1 opponent piece'
+                  : `${oppCount} opponent pieces`;
+
+    document.getElementById('description').textContent =
+      `Move the ${pieceLabel} from S to 🏁 in exactly ${optMoves} move${optMoves !== 1 ? 's' : ''}. `
+      + `Avoid all squares attacked by ${oppDesc}. `
+      + (this.curr.timeout ? '⚠ fallback puzzle.' : '');
+
+    let msg = `${pieceLabel} · ${optMoves} move${optMoves !== 1 ? 's' : ''} · Complexity ${optMoves}`;
+    if (this.curr.timeout) msg = '⚠ fallback | ' + msg;
     this.setStatus(msg);
     this.render();
   }
@@ -446,7 +464,8 @@ class Game {
 
     let {s, e, pieces, playerPiece} = this.curr;
 
-    document.querySelector(`[data-sq="${s}"]`).textContent = 'S';
+    const startCell = document.querySelector(`[data-sq="${s}"]`);
+    startCell.innerHTML = '<span class="start-marker">S</span>';
 
     // End square: checkered flag
     let endCell = document.querySelector(`[data-sq="${e}"]`);
@@ -470,19 +489,24 @@ class Game {
     svg.innerHTML = svg.innerHTML.split('</defs>')[0] + '</defs>';
     if (!document.getElementById('toggleHints').checked) return;
 
-    let size = 60;
-    this.curr.sol.forEach(path => {
+    const colors = JSON.parse(svg.dataset.pathColors || '["#4a9eff","#ff6b35","#3ddc84","#f5c518","#c77dff"]');
+    const size = 60;
+
+    this.curr.sol.forEach((path, pi) => {
+      const color = colors[pi % colors.length];
       for (let i = 0; i < path.length - 1; i++) {
         let a = toCoord(path[i]), b = toCoord(path[i+1]);
-        let line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', a.x*size+30);
-        line.setAttribute('y1', (7-a.y)*size+30);
-        line.setAttribute('x2', b.x*size+30);
-        line.setAttribute('y2', (7-b.y)*size+30);
-        line.setAttribute('stroke', 'blue');
-        line.setAttribute('stroke-width', '2');
-        line.setAttribute('opacity', '0.4');
-        line.setAttribute('marker-end', 'url(#arrow)');
+        // Slightly offset parallel paths so they don't overlap
+        const offset = (pi - (this.curr.sol.length - 1) / 2) * 4;
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', a.x*size + 30 + offset);
+        line.setAttribute('y1', (7-a.y)*size + 30 + offset);
+        line.setAttribute('x2', b.x*size + 30 + offset);
+        line.setAttribute('y2', (7-b.y)*size + 30 + offset);
+        line.setAttribute('stroke', color);
+        line.setAttribute('stroke-width', '2.5');
+        line.setAttribute('opacity', '0.75');
+        line.setAttribute('marker-end', `url(#arrow${pi % colors.length})`);
         svg.appendChild(line);
       }
     });
@@ -585,14 +609,26 @@ class Game {
 
     if (moves.includes(sq) && !atk.has(sq) && isPathSafe(this.pos, sq, atk)) {
       this.pos = sq;
+      this.moveCount++;
 
       if (sq === this.curr.e) {
-        let t = (performance.now() - this.startTime) / 1000;
-        this.lastTime = t;
-        this.setStatus('Solved in ' + t.toFixed(2) + 's! Loading next…');
-        setTimeout(() => this.nextLevel(), 1000);
+        const optMoves = this.curr.complexity;
+        if (this.moveCount === optMoves) {
+          // Optimal solution reached
+          let t = (performance.now() - this.startTime) / 1000;
+          this.lastTime = t;
+          this.setStatus('✓ Solved in ' + t.toFixed(2) + 's!');
+          setTimeout(() => this.nextLevel(), 1200);
+        } else {
+          // Reached end but not in optimal number of moves
+          this.invalid++;
+          const extra = this.moveCount - optMoves;
+          this.setStatus(`You reached the flag in ${this.moveCount} moves — optimal is ${optMoves}. Try again!`);
+          // Reset to start but keep move count visible; redo the puzzle
+          setTimeout(() => this.reset(), 1800);
+        }
       } else {
-        this.setStatus('Move piece');
+        this.setStatus(`Move piece · ${this.moveCount} move${this.moveCount !== 1 ? 's' : ''} so far`);
       }
 
       this.render();
