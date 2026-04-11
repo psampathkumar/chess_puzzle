@@ -349,9 +349,11 @@ class Generator {
       let atk = PieceEngine.getAttackMap(pieces, board);
       let sol = bfsAll(s, e, board, atk, playerPiece);
 
-      if (sol.length > 0 && sol[0].length >= 3) {
-        dbg(`Puzzle OK: ${(performance.now()-t0).toFixed(0)}ms, attempt=${attempt+1}/${MAX_ATTEMPTS}, level=${this.level}, ${playerPiece}, path=${sol[0].length}, opponents=${pieces.length}`);
-        return { s, e, pieces, sol, playerPiece, complexity: sol[0].length - 1 };
+      // Target: level N requires exactly (N+1) moves. Min 2 moves (level 1).
+      const targetMoves = this.level + 1;
+      if (sol.length > 0 && sol[0].length - 1 === targetMoves) {
+        dbg(`Puzzle OK: ${(performance.now()-t0).toFixed(0)}ms, attempt=${attempt+1}/${MAX_ATTEMPTS}, level=${this.level}, ${playerPiece}, moves=${targetMoves}, opponents=${pieces.length}`);
+        return { s, e, pieces, sol, playerPiece, complexity: targetMoves };
       }
     }
 
@@ -361,7 +363,7 @@ class Generator {
       pieces:[],
       sol:[['a1','a8','h8']],
       playerPiece:'rook',
-      complexity:2, // 2 moves
+      complexity: this.level + 1,
       timeout:true
     };
   }
@@ -457,7 +459,7 @@ class Game {
       + `Avoid all squares attacked by ${oppDesc}. `
       + (this.curr.timeout ? '⚠ fallback puzzle.' : '');
 
-    let msg = `${pieceLabel} · ${optMoves} move${optMoves !== 1 ? 's' : ''} · Complexity ${optMoves}`;
+    let msg = `${pieceLabel} · ${optMoves} move${optMoves !== 1 ? 's' : ''} to finish`;
     if (this.curr.timeout) msg = '⚠ fallback | ' + msg;
     this.setStatus(msg);
     this.render();
@@ -583,18 +585,23 @@ class Game {
 
     // Case 2: walk the ray from `from` toward `to`; check each intermediate square.
     // Knights jump so they have no intermediate squares.
+    // Guard: if from===to, or move is not a clean ray (dx=dy=0), skip entirely.
     const a = toCoord(from), b = toCoord(to);
     const adx = Math.abs(b.x - a.x), ady = Math.abs(b.y - a.y);
     const isKnight = (adx === 1 && ady === 2) || (adx === 2 && ady === 1);
-    if (!isKnight) {
+    const isSameSquare = (adx === 0 && ady === 0);
+    if (!isKnight && !isSameSquare) {
       const dx = Math.sign(b.x - a.x), dy = Math.sign(b.y - a.y);
-      let x = a.x + dx, y = a.y + dy;
-      while (x !== b.x || y !== b.y) {
-        const mid = toSquare(x, y);
-        if (PieceEngine.getAttackMap(pieces, board).has(mid)) {
-          addAttackersOf(mid);
+      // Only walk if it's a clean straight or diagonal ray (not a knight-like gap)
+      const isCleanRay = (adx === 0 || ady === 0 || adx === ady);
+      if (isCleanRay) {
+        const atk = PieceEngine.getAttackMap(pieces, board);
+        let x = a.x + dx, y = a.y + dy;
+        while (x !== b.x || y !== b.y) {
+          const mid = toSquare(x, y);
+          if (atk.has(mid)) addAttackersOf(mid);
+          x += dx; y += dy;
         }
-        x += dx; y += dy;
       }
     }
 
